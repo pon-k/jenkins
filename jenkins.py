@@ -6,14 +6,26 @@ import os
 from dotenv import load_dotenv
 import random
 import logging
+import pymongo
+from pymongo import MongoClient
 
 logging.basicConfig(level=logging.INFO)
 
+with open('dadjokes') as dad:
+    jokes = dad.read().splitlines()
+with open('wisdoms') as wis:
+    quotes = wis.read().splitlines()
+
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
+DB_CONN = os.getenv('CONN_URL')
 
 client = discord.Client()
 bot = commands.Bot(command_prefix='j!')
+
+cluster = MongoClient(DB_CONN)
+db = cluster['jenkins']
+coll = db['jenkincoll']
 
 # Event function definitions
 @bot.event
@@ -25,6 +37,14 @@ async def on_ready():
 async def greeting(ctx):
     await ctx.send('Greetings.')
 
+@bot.command(name='dadjoke')
+async def dad_joke(ctx):
+    await ctx.send(random.choice(jokes))
+
+@bot.command(name='wisdom')
+async def sayings(ctx):
+    await ctx.send(random.choice(quotes))
+
 @bot.command(name='coinflip', help='Flip a coin.')
 async def c_flip(ctx):
     c_result = ['Heads', 'Tails']
@@ -34,6 +54,11 @@ async def c_flip(ctx):
 async def dice(ctx, sides=6):
     d_roll = random.randint(1, sides)
     await ctx.send(f':game_die: You rolled a {d_roll}. :game_die:')
+
+@bot.command(name='smug')
+async def anismug(ctx):
+    path = random.choice(os.listdir('smug/'))
+    await ctx.send(file=discord.File('smug/' + path))
 
 @bot.command(name='admincheck')
 @has_permissions(administrator=True)
@@ -46,7 +71,16 @@ async def change_nickname(ctx, member: discord.Member, nname):
     await member.edit(nick=nname)
     await ctx.send(f'Nickname has been changed to {nname}.')
 
+@bot.command(name='createtc')
+@has_permissions(administrator=True)
+async def create_txt(ctx, cname):
+    await ctx.message.guild.create_text_channel(cname)
+    await ctx.send(f'Text channel **{cname}** created.')
 
-
+@bot.command(name='createvc')
+@has_permissions(administrator=True)
+async def create_vc(ctx, cname):
+    await ctx.message.guild.create_voice_channel(cname)
+    await ctx.send(f'Voice channel **{cname}** created.')
 
 bot.run(TOKEN)

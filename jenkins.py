@@ -1,6 +1,6 @@
 # Helper bot for Discord
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord.ext.commands import Bot, has_permissions, CheckFailure
 import os
 from dotenv import load_dotenv
@@ -8,6 +8,7 @@ import random
 import logging
 import pymongo
 from pymongo import MongoClient
+import datetime
 
 logging.basicConfig(level=logging.INFO)
 
@@ -65,13 +66,71 @@ async def rps(ctx, choice):
     choice = choice.capitalize()
     comp = random.choice(['Rock', 'Paper', 'Scissors'])
     comparison = {'Rock': 'Scissors', 'Scissors': 'Paper', 'Paper': 'Rock'}
+    check_id = {'_id': ctx.author.id}
+    if coll.count_documents(check_id) == 0:
+        v_data = {'_id': ctx.author.id, 'wins': 0, 'losses': 0}
+        coll.insert_one(v_data)
     if comparison[choice] == comp:
         await ctx.send(f'{comp}. You win!')
+        user = coll.find(check_id)
+        for entry in user:
+            wins = entry['wins']
+        wins += 1
+        coll.update_one(check_id, {"$set": {"wins": wins}})
     elif comp == choice:
         await ctx.send(f'{comp}. It\'s a draw.')
     else:
         await ctx.send(f'{comp}. You lose.')
+        user = coll.find(check_id)
+        for entry in user:
+            losses = entry['losses']
+        losses += 1
+        coll.update_one(check_id, {"$set": {"losses": losses}})
 
+@bot.command(name='jankenscore', help='Checks your win/loss record against Jenkins')
+async def score(ctx):
+    check_id = {'_id': ctx.author.id}
+    if coll.count_documents(check_id) == 0:
+        await ctx.send('You have not played against me before.')
+    else:
+        user = coll.find(check_id)
+        for entry in user:
+            losses = entry['losses']
+            wins = entry['wins']
+            await ctx.send(f'You currently have **{wins}** victories and **{losses}** losses.')
+
+
+@bot.command(name='reminder', help='Sets a timer after which Jenkins will message you')
+async def set_timer(ctx, amount, denom='s'):
+    current_time = datetime.datetime.now()
+    amount = int(amount)
+    if denom == 'm':
+        amount *= 60
+    if denom == 'h':
+        amount *= 3600
+    if denom == 'd':
+        amount *= 86400
+    if amount > 604800:
+        await ctx.send('Please keep the time to within the next week.')
+    else:
+        await ctx.send(f'Very good. I will message you in precisely {amount} seconds.')
+        timer_end = current_time + datetime.timedelta(seconds=int(amount))
+        check_id = {'_id': ctx.author.id}
+        if coll.count_documents(check_id) == 0:
+            t_data = {'_id': ctx.author.id, 'remind': timer_end}
+            coll.insert_one(t_data)
+        else:
+            coll.update_one(check_id, {"$set": {"remind": timer_end}})
+
+        @tasks.loop(seconds=5)
+        async def check_r():
+            user = coll.find(check_id)
+            for entry in user:
+                remind = entry['remind']
+            if datetime.datetime.now() >= remind:
+                await ctx.send(f'Time\'s up, {ctx.message.author.mention}.')
+                check_r.cancel()
+        check_r.start()
 
 @bot.command(name='admincheck')
 @has_permissions(administrator=True)
@@ -104,7 +163,6 @@ async def add_role(ctx, rname=None):
     else:
         await ctx.guild.create_role(name=rname)
         await ctx.send(f'New role **{rname}** created.')
-
 
 
 bot.run(TOKEN)
